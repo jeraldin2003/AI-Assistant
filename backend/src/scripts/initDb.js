@@ -91,7 +91,40 @@ const ensureTables = async () => {
       throw err
     }
 
-    // Add additional table creation here as needed
+    const createPdfHashes = `CREATE TABLE IF NOT EXISTS pdf_hashes (
+      id SERIAL PRIMARY KEY,
+      file_hash VARCHAR(64) UNIQUE NOT NULL,
+      filename VARCHAR(255) NOT NULL,
+      chunk_count INT NOT NULL,
+      uploaded_by INT REFERENCES users(id),
+      created_at TIMESTAMPTZ DEFAULT now()
+    )`
+
+    try {
+      await client.query(createPdfHashes)
+      console.log('Ensured table: pdf_hashes')
+    } catch (err) {
+      console.error('Error creating pdf_hashes table:', err.message || err)
+      throw err
+    }
+
+    const createDocumentChunks = `CREATE TABLE IF NOT EXISTS document_chunks (
+      id SERIAL PRIMARY KEY,
+      pdf_hash VARCHAR(64) NOT NULL,
+      chunk_index INT NOT NULL,
+      content TEXT NOT NULL,
+      metadata JSONB DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ DEFAULT now()
+    )`
+
+    try {
+      await client.query(createDocumentChunks)
+      console.log('Ensured table: document_chunks')
+    } catch (err) {
+      console.error('Error creating document_chunks table:', err.message || err)
+      throw err
+    }
+
   } finally {
     await client.end().catch(() => {})
   }
