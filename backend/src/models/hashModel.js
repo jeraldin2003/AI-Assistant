@@ -19,23 +19,40 @@ export const savePdfHash = async (fileHash, filename, chunkCount, userId) => {
 export const saveDocumentChunks = async (chunks) => {
   if (!chunks || chunks.length === 0) return []
 
-  // Batch insert chunks
-  const values = []
-  const valueStrings = []
+  // Avoid a single gigantic INSERT statement (can be extremely slow / exceed limits
+  // when PDFs generate many chunks).
+  const BATCH_SIZE = Number(process.env.POSTGRES_CHUNK_INSERT_BATCH_SIZE || 200)
 
-  chunks.forEach((chunk, index) => {
-    const offset = index * 4
-    valueStrings.push(`($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4})`)
-    values.push(chunk.pdfHash, chunk.chunkIndex, chunk.content, JSON.stringify(chunk.metadata || {}))
-  })
+  const allRows = []
+  for (let start = 0; start < chunks.length; start += BATCH_SIZE) {
+    const batch = chunks.slice(start, start + BATCH_SIZE)
+    const values = []
+    const valueStrings = []
 
-  const query = `
-    INSERT INTO document_chunks (pdf_hash, chunk_index, content, metadata)
-    VALUES ${valueStrings.join(', ')}
-    RETURNING *
-  `
-  const { rows } = await db.query(query, values)
-  return rows
+    batch.forEach((chunk, index) => {
+      const offset = index * 4
+      valueStrings.push(
+        `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4})`
+      )
+      values.push(
+        chunk.pdfHash,
+        chunk.chunkIndex,
+        chunk.content,
+        JSON.stringify(chunk.metadata || {})
+      )
+    })
+
+    const query = `
+      INSERT INTO document_chunks (pdf_hash, chunk_index, content, metadata)
+      VALUES ${valueStrings.join(', ')}
+      RETURNING *
+    `
+
+    const { rows } = await db.query(query, values)
+    allRows.push(...rows)
+  }
+
+  return allRows
 }
 
 
